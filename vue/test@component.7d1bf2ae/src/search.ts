@@ -1,110 +1,69 @@
+import yargs from 'yargs'
+
 import { Repository, History } from '@csm/core'
-import { Arguments, Argv } from 'yargs'
-import check from './check'
-import Err from './err'
-import ora from 'ora'
-import chalk from 'chalk'
+import search from '../src/search'
+import check from '../src/check'
 
-export const command = 'search <name>'
-export const describe = 'Search material'
+jest.spyOn(console, 'log').mockImplementation()
 
-export function builder(argv: Argv) {
-  argv.positional('name', {
-    describe: 'material name',
-    type: 'string'
-  })
+jest.mock('@csm/core')
+jest.mock('../src/check', () => jest.fn().mockResolvedValue(true))
+jest.mock('ora', () => jest.fn().mockReturnValue({
+  start: jest.fn().mockReturnValue({ succeed: jest.fn() }),
+  stop: jest.fn()
+}))
 
-  argv.options({
-    repository: {
-      alias: 'r',
-      type: 'string',
-      describe: 'repository name',
-      require: false
-    },
-    category: {
-      alias: 'c',
-      type: 'string',
-      describe: 'category name',
-      require: false
-    }
-  })
-  return argv
+const repositoryConfig = {
+  repository: 'test'
 }
 
-export async function handler(args: Arguments) {
-  await check()
-  const name = args.name as string
-  const repositoryName = args.repository as string | undefined
-  const categoryName = args.category as string | undefined
+const repository = {
+  getConfig: jest.fn().mockReturnValue(repositoryConfig),
+  searchMaterial: jest.fn().mockResolvedValue([['test']])
+}
 
-  if (repositoryName === undefined) {
-    await searchAllRepository(name, categoryName)
-  } else {
-    await searchInRepository(name, repositoryName, categoryName)
+Repository.repositoryList = jest.fn().mockReturnValueOnce({ size: 0, repository: {} }).mockReturnValue({
+  size: 1,
+  repository: {
+    test: repository
   }
-}
+})
+Repository.find = jest.fn().mockReturnValueOnce(null).mockReturnValue(repository)
 
-async function searchAllRepository(name: string, categoryName?: string) {
-  const repositories = Object.values(Repository.repositoryList().repository)
-  if (repositories.length === 0) throw new Err('No repository exist')
+History.transform = jest.fn().mockReturnValue({})
 
-  const spinner = ora('Searching...').start()
-  const progress = repositories.map(async (repository) => {
-    spinner.text = `Searching ${repository.getConfig().repository}`
-    return await repository.searchMaterial(name, categoryName)
+const command = yargs.command(search)
+
+describe('command search should be right', () => {
+  test('searchAllRepository should be right ', async () => {
+    const args = command.parse(['--name', 'test'])
+
+    await expect(search.handler(args)).rejects.toThrow(/No repository exist/)
+    expect(check).toBeCalledTimes(1)
+    expect(Repository.repositoryList).toBeCalledTimes(1)
+
+    repository.searchMaterial = jest.fn().mockResolvedValue([])
+    await expect(search.handler(args)).rejects.toThrow(/No results in all repository/)
+    expect(repository.searchMaterial).toBeCalledWith('test', undefined)
+
+    repository.searchMaterial = jest.fn().mockResolvedValue([['test']])
+    await expect(search.handler(args)).resolves.not.toThrow()
+    expect(repository.getConfig).toReturnWith(repositoryConfig)
+    expect(History.transform).toBeCalledWith(['test'])
   })
 
-  const result = await Promise.all(progress)
-  spinner.succeed('Done')
+  test('searchInRepository should be right ', async () => {
+    const args = command.parse(['--name', 'test', '--repository', 'test', '--category', 'test'])
 
-  if (result.flat().length === 0) throw new Err('No results in all repository')
+    await expect(search.handler(args)).rejects.toThrow(/repository .* does not does not exist/)
+    expect(Repository.find).toBeCalledWith('test')
 
-  result.forEach((repo, index) => {
-    const repositoryName: string = repositories[index].getConfig().repository
-    repo.forEach((r) => {
-      const record = History.transform(r)
-      const name: string = record.name
-      const category: string = record.category
-      const author: string = record.author
+    repository.searchMaterial = jest.fn().mockResolvedValue([])
+    await expect(search.handler(args)).rejects.toThrow(/No results in/)
+    expect(repository.searchMaterial).toBeCalledWith('test', 'test')
 
-      console.log(
-        `${chalk.green(
-          name
-        )} in repository ${repositoryName} category ${category} by ${author}`
-      )
-    })
+    repository.searchMaterial = jest.fn().mockResolvedValue([['test']])
+    await expect(search.handler(args)).resolves.not.toThrow()
+    expect(History.transform).toBeCalledWith(['test'])
   })
-}
-
-async function searchInRepository(
-  name: string,
-  repositoryName: string,
-  categoryName?: string
-) {
-  const repository = Repository.find(repositoryName)
-  if (repository === null) {
-    throw new Err(`repository ${repositoryName} does not does not exist`)
-  }
-  const spinner = ora(
-    `Searching ${name} in repository ${repositoryName}`
-  ).start()
-  const result = await repository.searchMaterial(name, categoryName)
-  spinner.succeed('Done')
-  if (result.length === 0) throw new Err(`No results in ${repositoryName}`)
-
-  result.forEach((r) => {
-    const record = History.transform(r)
-    const name: string = record.name
-    const category: string = record.category
-    const author: string = record.author
-
-    console.log(`${chalk.green(name)} in category ${category} by ${author}`)
-  })
-}
-
-export default {
-  command,
-  describe,
-  builder,
-  handler
-}
+})

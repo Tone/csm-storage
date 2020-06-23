@@ -1,34 +1,33 @@
-import { Arguments, Argv, CommandModule } from 'yargs'
-import { Storage } from '@csm/core'
+import yargs from 'yargs'
+import path from 'path'
 import fs from 'fs-extra'
-import { CONF_FILE } from './config'
 
-class Init implements CommandModule {
-  readonly command = 'init [storageDir]'
-  readonly describe = 'Init local storage'
-  builder(argv: Argv) {
-    argv.positional('storageDir', {
-      describe: 'local storage dir',
-      type: 'string'
-    })
+import { Storage } from '@csm/core'
+import { CONF_FILE } from '../src/config'
+import init from '../src/init'
 
-    argv.options({
-      remote: {
-        alias: 'r',
-        type: 'string',
-        describe: 'remote repository url',
-        require: false
-      }
-    })
-    return argv
-  }
+const testDir = path.resolve(__dirname, 'test_dir_init')
 
-  async handler(args: Arguments) {
-    const storageDir = args.storageDir as string
-    const remoteUrl = args.remote as string
-    const { dir } = await Storage.init(storageDir, remoteUrl)
-    await fs.writeJSON(CONF_FILE, { dir })
-  }
-}
+jest.mock('@csm/core')
+jest.mock('../src/config', () => ({
+  CONF_FILE: path.resolve(__dirname, 'test_dir_init/.csm.conf'),
+  ERR_NAME: 'CLI_ERR'
+}))
 
-export default new Init()
+const testConfig = { dir: 'test_dir_init' }
+Storage.init = jest.fn().mockReturnValue(testConfig)
+const command = yargs.command(init)
+
+test('command init should be right', async () => {
+  fs.ensureFileSync(CONF_FILE)
+  let args = command.parse()
+  await expect(init.handler(args)).resolves.not.toThrow()
+  expect(Storage.init).toBeCalledWith(undefined, undefined)
+
+  args = command.parse(['--storageDir', 's', '--remote', 'r'])
+  await init.handler(args)
+  expect(Storage.init).toBeCalledWith('s', 'r')
+  expect(fs.readJSONSync(CONF_FILE)).toEqual(testConfig)
+
+  fs.removeSync(testDir)
+})

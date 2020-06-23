@@ -1,148 +1,78 @@
-import { Repository, Storage } from '@csm/core'
-import { Arguments, Argv } from 'yargs'
-import check from './check'
-import Err from './err'
-import inquirer, { QuestionCollection, Answers } from 'inquirer'
-import path from 'path'
-import fs from 'fs-extra'
+import yargs from 'yargs'
 
-export const command = 'patch <name> [dir]'
-export const describe = 'Patch material'
+import { Storage, Repository } from '@csm/core'
+import patch from '../src/patch'
+import check from '../src/check'
+import inquirer from 'inquirer'
 
-export function builder(argv: Argv) {
-  argv.positional('name', {
-    describe: 'material name',
-    type: 'string'
-  })
+jest.mock('@csm/core')
+jest.mock('../src/check', () => jest.fn().mockResolvedValue(true))
+jest.mock('inquirer')
 
-  argv.positional('dir', {
-    describe: 'Patch file dir',
-    type: 'string'
-  })
+inquirer.prompt = (jest.fn().mockResolvedValue({
+  category: 'test',
+  repositoryName: 'test'
+})) as unknown as inquirer.PromptModule
 
-  argv.options({
-    repository: {
-      alias: 'r',
-      type: 'string',
-      describe: 'repository name',
-      require: false
+const storage = {
+  author: jest.fn().mockResolvedValueOnce('test').mockResolvedValue('author')
+}
+
+Storage.storage = jest.fn().mockReturnValue(storage)
+
+const submitFn = jest.fn()
+const repository = {
+  getConfig: jest.fn().mockReturnValue({}),
+  find: jest.fn().mockReturnValueOnce(null).mockReturnValue({
+    config: {
+      author: 'author',
+      name: 'test'
     },
-    category: {
-      alias: 'c',
-      type: 'string',
-      describe: 'category name',
-      require: false
-    }
+    submit: submitFn
+  })
+}
+Repository.repositoryList = jest.fn().mockReturnValueOnce({ size: 0 }).mockReturnValue({
+  size: 1,
+  repository: {
+    test: repository
+  }
+})
+Repository.find = jest.fn().mockReturnValueOnce(null).mockReturnValue(repository)
+
+const command = yargs.command(patch)
+
+describe('command patch  should be right', () => {
+  test('throw should be right ', async () => {
+    const args = command.parse(['--name', 'test', '--dir', 'test'])
+    await expect(patch.handler(args)).rejects.toThrow(/Patch dir .* does not exists/)
+    expect(check).toBeCalledTimes(1)
   })
 
-  return argv
-}
+  test('initiative submit should be right ', async () => {
+    const args = command.parse(['--name', 'test', '--repository', 'test', '--category', 'test'])
 
-export async function handler(args: Arguments) {
-  await check()
-  const name = args.name as string
-  const dir = args.dir as string | undefined
-  const repositoryName = args.repository as string | undefined
-  const category = args.category as string | undefined
+    await expect(patch.handler(args)).rejects.toThrow(/repository .* does not does not exist/)
+    expect(Repository.find).toBeCalledWith('test')
 
-  let srcDir = process.cwd()
-  if (dir !== undefined) {
-    srcDir = path.resolve(srcDir, dir)
-  }
-  if (!fs.pathExistsSync(srcDir)) {
-    throw new Err(`Patch dir ${srcDir} does not exists`)
-  }
+    await expect(patch.handler(args)).rejects.toThrow(/No material/)
+    expect(repository.find).toBeCalledWith('test', 'test')
+    expect(repository.getConfig).toBeCalledTimes(1)
 
-  if (repositoryName !== undefined && category !== undefined) {
-    await initiative(name, repositoryName, category, srcDir)
-  } else {
-    await interactive(name, srcDir)
-  }
-}
+    await expect(patch.handler(args)).rejects.toThrow(/author is /)
 
-async function interactive(name: string, dir: string) {
-  const { size, repository } = Repository.repositoryList()
+    await expect(patch.handler(args)).resolves.not.toThrow()
+    expect(submitFn).toBeCalledWith(process.cwd())
+  })
 
-  if (size === 0) {
-    throw new Err('No repository exist')
-  }
-
-  const question: QuestionCollection = [
-    {
-      type: 'autocomplete',
-      name: 'repositoryName',
-      message: 'Choose repository',
-      source: async (_: Answers, input: string) => {
-        return Object.keys(repository).filter((repositoryName) =>
-          repositoryName.includes(input)
-        )
-      }
-    },
-    {
-      type: 'autocomplete',
-      name: 'category',
-      message: 'Choose category',
-      source: async (answer: Answers, input: string) => {
-        const repositoryName = answer.repositoryName as string
-        const repo = repository[repositoryName]
-        return Object.keys(repo.getConfig().category).filter((c) =>
-          c.includes(input)
-        )
-      }
-    }
-  ]
-
-  const answers = await inquirer.prompt(question)
-  const inputCategory = answers.category as string
-  const inputRepository = answers.repositoryName as string
-
-  await submit(name, dir, repository[inputRepository], inputCategory)
-}
-
-async function initiative(
-  name: string,
-  repositoryName: string,
-  categoryName: string,
-  srcDir: string
-) {
-  const repository = Repository.find(repositoryName)
-  if (repository === null) {
-    throw new Err(`repository ${repositoryName} does not does not exist`)
-  }
-
-  await submit(name, srcDir, repository, categoryName)
-}
-
-async function submit(
-  name: string,
-  srcDir: string,
-  repository: Repository,
-  categoryName: string
-) {
-  const repositoryName = repository.getConfig().repository
-  const material = await repository.find(name, categoryName)
-  if (material === null) {
-    throw new Err(
-      `No material ${name} was found in repository ${repositoryName}`
-    )
-  }
-
-  const localAuthor = await Storage.storage().author()
-  const author: string = material.config.author
-  const materialName: string = material.config.name
-
-  if (localAuthor !== author) {
-    throw new Err(
-      `Material ${materialName} author is ${author}, but local is ${localAuthor}`
-    )
-  }
-  console.log(srcDir)
-  await material.submit(srcDir)
-}
-
-export default {
-  command,
-  describe,
-  builder,
-  handler
-}
+  test('interactive submit should be right ', async () => {
+    const args = command.parse(['--name', 'test'])
+    await expect(patch.handler(args)).rejects.toThrow(/No repository exist/)
+    expect(Repository.repositoryList).toBeCalledTimes(1)
+    await expect(patch.handler(args)).resolves.not.toThrow()
+    expect(Repository.repositoryList).toBeCalledTimes(2)
+    expect(inquirer.prompt).toBeCalledTimes(1)
+    expect(repository.find).toBeCalledWith('test', 'test')
+    expect(repository.getConfig).toBeCalled()
+    expect(submitFn).toBeCalledWith(process.cwd())
+  })
+})

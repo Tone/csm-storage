@@ -1,65 +1,58 @@
+import yargs from 'yargs'
+
 import { Repository } from '@csm/core'
-import { Arguments, Argv } from 'yargs'
-import check from './check'
-import Err from './err'
-import ora from 'ora'
+import update from '../src/update'
+import check from '../src/check'
 
-export const command = 'update [name]'
-export const describe = 'Update repository'
+jest.spyOn(console, 'log').mockImplementation()
 
-export function builder(argv: Argv) {
-  argv.positional('name', {
-    describe: 'repository name',
-    type: 'string'
+jest.mock('@csm/core')
+jest.mock('../src/check', () => jest.fn().mockResolvedValue(true))
+jest.mock('ora', () => jest.fn().mockReturnValue({
+  start: jest.fn().mockReturnValue({ succeed: jest.fn() }),
+  stop: jest.fn()
+}))
+
+const repositoryConfig = {
+  repository: 'test'
+}
+
+const repository = {
+  getConfig: jest.fn().mockReturnValue(repositoryConfig),
+  update: jest.fn()
+}
+
+Repository.repositoryList = jest.fn().mockReturnValueOnce({ size: 0, repository: {} }).mockReturnValue({
+  size: 1,
+  repository: {
+    test: repository
+  }
+})
+Repository.find = jest.fn().mockReturnValueOnce(null).mockReturnValue(repository)
+
+const command = yargs.command(update)
+
+describe('command update should be right', () => {
+  test('updateAllRepository should be right ', async () => {
+    const args = command.parse([])
+
+    await expect(update.handler(args)).rejects.toThrow(/No repository exist/)
+    expect(check).toBeCalledTimes(1)
+    expect(Repository.repositoryList).toBeCalledTimes(1)
+
+    await expect(update.handler(args)).resolves.not.toThrow()
+    expect(repository.getConfig).toBeCalledTimes(1)
+    expect(repository.update).toBeCalledTimes(1)
   })
 
-  return argv
-}
+  test('searchInRepository should be right ', async () => {
+    const args = command.parse(['--name', 'test'])
 
-export async function handler(args: Arguments) {
-  await check()
-  const name = args.name as string | undefined
+    await expect(update.handler(args)).rejects.toThrow(/repository .* does not does not exist/)
+    expect(Repository.find).toBeCalledWith('test')
 
-  if (name === undefined) {
-    await updateAllRepository()
-    return
-  }
-
-  await updateByRepositoryName(name)
-}
-
-async function updateByRepositoryName(name: string) {
-  const repository = Repository.find(name)
-  if (repository === null) {
-    throw new Err(`repository ${name} does not does not exist`)
-  }
-  const spinner = ora(`Updating  repository ${name}...`).start()
-  await repository.update()
-  spinner.succeed('Done')
-}
-
-async function updateAllRepository() {
-  const repositories = Repository.repositoryList()
-  if (repositories.size === 0) throw new Err('No repository exist')
-
-  const spinner = ora('Updating...').start()
-
-  const progress = Object.values(repositories.repository).map(
-    async (repository) => {
-      spinner.text = `Updating  repository ${
-        repository.getConfig().repository
-      }...`
-      return await repository.update()
-    }
-  )
-
-  await Promise.all(progress)
-  spinner.succeed('Done')
-}
-
-export default {
-  command,
-  describe,
-  builder,
-  handler
-}
+    repository.update = jest.fn()
+    await expect(update.handler(args)).resolves.not.toThrow()
+    expect(repository.update).toBeCalledTimes(1)
+  })
+})
