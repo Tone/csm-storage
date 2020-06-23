@@ -1,0 +1,10 @@
+repository = "vue"
+name = "test"
+category = "component"
+description = "ds"
+author = "xIYuE <yanghc1226@outlook.com>"
+tags = [ "d", "ds", "" ]
+inject = """
+dsdds
+"""
+package = [ ]
