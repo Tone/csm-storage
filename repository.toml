@@ -1,0 +1,54 @@
+#############
+## 仓库约束 ##
+#############
+## 仓库类型
+repository = "vue"
+## 物料文件夹命名风格 默认 name@author[hash]
+style = ""
+
+## 执行环境依赖
+[[env]]
+exec = "node"
+version = "10.0.0"
+
+[[env]]
+exec = "npm"
+version = "4.7.0"
+
+## 包依赖
+[[package]]
+name = "vue"
+version = "2.6.10"
+
+[[package]]
+name = "ant-design-vue"
+version = "1.4.12"
+
+## 物料类别
+### 组件
+[category.component]
+position = "" # 组件载入位置
+dir = [] # 组件目录约定
+inject = false # 是否生成默认的插入片段文件
+
+[category.component.checklist] # 生成组件配置文件时的检查项
+name = false # 组件名称 默认文件夹名称
+description = true # 组件描述 必须输入
+author = false # 组件作者 默认 Git 用户信息 <name email>
+tags = false # 组件标签
+inject = false # 插入片段
+
+### 区块
+[category.block]
+position = "" # 区块载入位置
+dir = [] # 区块目录约定
+
+### 页面
+[category.page]
+position = "" # 页面载入位置
+dir = [] # 页面目录约定
+
+### 工程
+[category.project]
+position = "" # 工程载入位置
+dir = [] # 工程目录约定
