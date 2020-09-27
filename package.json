@@ -1,0 +1,22 @@
+{
+  "name": "csm-storage",
+  "version": "1.0.0-alpha.0",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tone/csm-storage.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "/lib/**/*"
+  ],
+  "csmConfig": {
+    "categories": {
+      "component": "./component"
+    },
+    "templateUrl": "git@github.com:Tone/code-sharer.git#simple/packages/csm-template-vue"
+  }
+}

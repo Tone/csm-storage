@@ -1,8 +1,0 @@
-repository = "vue"
-name = "csm-cli"
-category = "block"
-description = ""
-author = "xIYuE <yanghc1226@outlook.com>"
-tags = [ "" ]
-inject = ""
-package = [ ]
